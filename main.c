@@ -28,7 +28,7 @@ float calculate_surface_value(mode *modes, int num_modes, double theta, double p
 {
     float val = 0;
     for (int i = 0; i < num_modes; i++)
-        val += modes[i].a*cos(modes[i].m*phi)*gsl_sf_legendre_sphPlm(modes[i].l, modes[i].m, cos(theta))*cos(modes[i].w*t);
+        val += modes[i].a*cos(modes[i].m*phi - modes[i].w*t)*gsl_sf_legendre_sphPlm(modes[i].l, modes[i].m, cos(theta));
     return val;
 }
 
@@ -71,22 +71,35 @@ void set_color_scale(mode *modes, int num_modes, int ang_res, float *omin, float
 
 /*
  * Rotate a point about the x axis by an angle a
+ * p is a double[3]
  */
-void rotate_x(double x, double y, double z, double a, double *ox, double *oy, double *oz)
+void rotate_x(double *p, double a)
 {
-    *ox = x;
-    *oy = y*cos(a) - z*sin(a);
-    *oz = y*sin(a) + z*cos(a);
+    double y = p[1], z = p[2];
+    p[1] = y*cos(a) - z*sin(a);
+    p[2] = y*sin(a) + z*cos(a);
 }
 
 /*
  * Rotate a point about the y axis by an angle a
+ * p is a double[3]
  */
-void rotate_y(double x, double y, double z, double a, double *ox, double *oy, double *oz)
+void rotate_y(double *p, double a)
 {
-    *ox = x*cos(a) + z*sin(a);
-    *oy = y;
-    *oz = -x*sin(a) + z*cos(a);
+    double x = p[0], z = p[2];
+    p[0] = x*cos(a) + z*sin(a);
+    p[2] = -x*sin(a) + z*cos(a);
+}
+
+/*
+ * Rotate a point about the z axis by an angle a
+ * p is a double[3]
+ */
+void rotate_z(double *p, double a)
+{
+    double x = p[0], y = p[1];
+    p[0] = x*cos(a) - y*sin(a);
+    p[1] = x*sin(a) + y*cos(a);
 }
 
 /*
@@ -131,8 +144,9 @@ int line_sphere_intersection(double *p1, double *p2, double *p3, double r, doubl
 
 /*
  * Draw the axis lines on top of the projection plot
+ * rx, rz describe rotations around the x then z axes
  */
-void plot_projection_axes(double width, double scale, double length, double theta, double phi)
+void plot_projection_axes(double width, double scale, double length, double ry, double rz)
 {
     // Sphere radius
     double r = width*scale/2;
@@ -143,50 +157,46 @@ void plot_projection_axes(double width, double scale, double length, double thet
     // Axis lengths
     double e = r+length;
     double h = e+5;
-    double points[36] =
+    double p[36] =
     {
         // Heads
         r, 0, 0,
         h, 0, 0,
-        0, 0, r,
-        0, 0, h,
         0, r, 0,
         0, h, 0,
+        0, 0, r,
+        0, 0, h,
 
         // Tails
         -r, 0, 0,
         -e, 0, 0,
-        0, 0, -r,
-        0, 0, -e,
         0, -r, 0,
         0, -e, 0,
+        0, 0, -r,
+        0, 0, -e,
     };
-    double tp[24];
+
+    // Colors:            x,y,z
     int axis_colors[3] = {2,3,5};
-
-    for (int i = 0; i < 18; i++)
+    
+    // Rotate each point from world -> view coordinates
+    for (int i = 0; i < 12; i++)
     {
-        double x = points[3*i];
-        double y = points[3*i + 1];
-        double z = points[3*i + 2];
-
-        // Rotate around the axis with time
-        rotate_y(x, y, z, theta, &x, &y, &z);
-
-        // Rotate away from the plane so we are looking slightly down on the rotation axis
-        rotate_x(x, y, z, phi, &x, &y, &z);
-
-        tp[2*i+0] = x;
-        tp[2*i+1] = y;
+        rotate_z(&(p[3*i]), rz);
+        rotate_y(&(p[3*i]), ry);
     }
 
+    // Plot line segments
     for (int i = 0; i < 6; i++)
     {
-        // Correct for occlusion of the axis by the sphere
-        if ((i != 2 && tp[4*i+1] > 0) || i == 5)
+        // Correct for occlusion by the sphere
+        // smaller x goes deeper into the screen
+        if (p[6*i] < 0) // behind the sphere?
         {
-            double p1[3] = {tp[4*i], tp[4*i+1], 0};
-            double p2[3] = {tp[4*i+2], tp[4*i+3], 0};
+            // Force x = 0 for calculation
+            p[6*i] = p[6*i+3] = 0;
+            double *p1 = &(p[6*i]);
+            double *p2 = &(p[6*i+3]);
             double p3[3] = {0, 0, 0};
             double u[2] = {0,0};
 
@@ -199,8 +209,8 @@ void plot_projection_axes(double width, double scale, double length, double thet
                 if (sol > 1)
                     continue;
 
-                tp[4*i] += sol*(p2[0]-p1[0]);
-                tp[4*i+1] += sol*(p2[1]-p1[1]);
+                p[6*i+1] += sol*(p2[1]-p1[1]);
+                p[6*i+2] += sol*(p2[2]-p1[2]);
             }
         }
 
@@ -208,18 +218,18 @@ void plot_projection_axes(double width, double scale, double length, double thet
         if (i < 3)
         {
             // Head
-            cpgarro(o+tp[4*i],
-                    o+tp[4*i+1],
-                    o+tp[4*i+2],
-                    o+tp[4*i+3]);
+            cpgarro(o+p[6*i+1],
+                    o+p[6*i+2],
+                    o+p[6*i+4],
+                    o+p[6*i+5]);
         }
         else
         {
             // Tail
-            cpgmove(o+tp[4*i+2],
-                    o+tp[4*i+3]);
-            cpgdraw(o+tp[4*i],
-                    o+tp[4*i+1]);
+            cpgmove(o+p[6*i+1],
+                    o+p[6*i+2]);
+            cpgdraw(o+p[6*i+4],
+                    o+p[6*i+5]);
         }
     }
 }
@@ -235,6 +245,10 @@ int plot_harmonic(int l, int m)
     mode modes[] =
     {
         {l, m, 1.0f, 1.0f}
+        //{1, 0, 1.0f, 1.0f},
+        //{1, 1, 0.5f, 0.20f},
+        //{2, 0, 0.25f, 1.8f},
+        //{2, 1, 0.05f, 2.0f}
     };
 
     /*
@@ -271,13 +285,14 @@ int plot_harmonic(int l, int m)
     // Plot border and decorations for angle plot
     cpgsvp(0.1, 0.48, 0.1, 0.9);
     cpgwnad(0, ang_res, 0, ang_res);
-    cpgswin(0, 2*M_PI, 0, M_PI);
+    cpgswin(0, 2*M_PI, M_PI, 0);
     cpgbox("bcstn", M_PI, 4, "bcstn", M_PI, 4);
     cpgmtxt("l", 2.5, 0.5, 0.5, "theta");
     cpgmtxt("b", 2.5, 0.5, 0.5, "phi");
 
-    double rt = 0;
-    double pt = -M_PI/4;
+    // Coordinate rotations
+    double rz = -M_PI/4;
+    double ry = 30*M_PI/180;
 
     // Current simulation time
     double t = 0;
@@ -287,7 +302,7 @@ int plot_harmonic(int l, int m)
          * Plot the harmonic value as a function of theta,phi
          */
         cpgsvp(0.1, 0.48, 0.1, 0.9);
-        cpgwnad(0, ang_res, 0, ang_res);
+        cpgwnad(0, ang_res, ang_res, 0);
 
         for (int j = 0; j < ang_res; j++)
             for (int i = 0; i < ang_res; i++)
@@ -308,28 +323,51 @@ int plot_harmonic(int l, int m)
                 int ij = proj_res*j + i;
                 proj_data[ij] = -1e9;
 
-                double x = (2*i - proj_res)/(scale*proj_res);
-                double y = (2*j - proj_res)/(scale*proj_res);
+                // Screen x,y maps to world y,z. world z is out of the screen.
+                // Scale so that r = 1
+                double x = 1.5;
+                double y = (2*i - proj_res)/(scale*proj_res);
+                double z = (2*j - proj_res)/(scale*proj_res);
 
-                if (x*x + y*y >= 1)
+                // Outside the sphere
+                if (y*y + z*z >= 1)
                     continue;
 
-                double z = sqrt(1 - x*x - y*y);
+                // Project a ray through the sphere to find the closest intersection
+                double p1[3] = {x, y, z};
+                double p2[3] = {-x, y, z};
+                double p3[3] = {0, 0, 0};
 
-                // Rotate away from the plane so we are looking slightly down on the rotation axis
-                rotate_x(x, y, z, pt, &x, &y, &z);
+                // Rotate coordinate system around ray to find the rotated world coords
+                // Rotate each point from view -> world coordinates
+                rotate_y(p1, -ry);
+                rotate_y(p2, -ry);
+                rotate_z(p1, -rz);
+                rotate_z(p2, -rz);
 
-                // Rotate away from the plane so we are looking slightly down on the rotation axis
-                rotate_y(x, y, z, rt, &x, &y, &z);
+                // Find intersection with sphere
+                double u[2] = {0, 0};
 
-                double theta = acos(y);
-                double phi = acos(x/sin(theta));
+                if (!line_sphere_intersection(p1, p2, p3, 1, u))
+                    continue;
+
+                double sol = fmin(u[0], u[1]);
+                x = p1[0]+sol*(p2[0]-p1[0]);
+                y = p1[1]+sol*(p2[1]-p1[1]);
+                z = p1[2]+sol*(p2[2]-p1[2]);
+
+                // Calculate spherical angles
+                // Theta is measured clockwise from +z
+                double theta = acos(z);
+                double phi = atan2(x,y);
+
                 proj_data[ij] = calculate_surface_value(modes, num_modes, theta, phi, t);
             }
 
         cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
-        plot_projection_axes(proj_res, scale, 60, rt, pt);
-        rt += 0.02;
+        plot_projection_axes(proj_res, scale, 60, ry, rz);
+        //rz += 0.02;
+        //ry += 0.02;
         t += 0.15;
     }
 
