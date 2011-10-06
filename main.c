@@ -89,6 +89,44 @@ void rotate_y(double x, double y, double z, double a, double *ox, double *oy, do
     *oz = -x*sin(a) + z*cos(a);
 }
 
+/*
+ * Find the 2 values of the line parameter u that describe the
+ * intersection of the line between p1 and p2 with the sphere
+ * centered at p3 with radius r
+ * p1,p2,p3 are double[3]
+ * u is a double[2], for the results
+ * returns FALSE if there is no intersection
+ */
+int line_sphere_intersection(double *p1, double *p2, double *p3, double r, double *u)
+{
+    // Line from p1 to p2
+    double dpx = p2[0] - p1[0];
+    double dpy = p2[1] - p1[1];
+    double dpz = p2[2] - p1[2];
+
+    // Line from p3 to p1
+    double dcx = p1[0] - p3[0];
+    double dcy = p1[1] - p3[1];
+    double dcz = p1[2] - p3[2];
+
+    // Polynomial coefficients
+    double a = dpx*dpx + dpy*dpy + dpz*dpz;
+    double b = 2*(dcx*dpx + dcy*dpy + dcz*dpz);
+    double c = dcx*dcx + dcy*dcy + dcz*dcz - r*r;
+    double disc = b*b - 4*a*c;
+
+    // No real solutions
+    if (disc < 0)
+        return 0;
+
+    // Solve for line parameter u.
+    double d = sqrt(disc);
+    u[0] = (-b + d)/(2*a);
+    u[1] = (-b - d)/(2*a);
+
+    return 1;
+}
+
 #pragma mark Drawing Functions
 
 /*
@@ -147,30 +185,22 @@ void plot_projection_axes(double width, double scale, double length, double thet
         // Correct for occlusion of the axis by the sphere
         if ((i != 2 && tp[4*i+1] > 0) || i == 5)
         {
-            // Line from p1 to p2
-            double dpx = tp[4*i+2] - tp[4*i];
-            double dpy = tp[4*i+3] - tp[4*i+1];
+            double p1[3] = {tp[4*i], tp[4*i+1], 0};
+            double p2[3] = {tp[4*i+2], tp[4*i+3], 0};
+            double p3[3] = {0, 0, 0};
+            double u[2] = {0,0};
 
-            // Line from c to p1
-            double dcx = tp[4*i];
-            double dcy = tp[4*i+1];
-
-            // Polynomial coefficients
-            double a = dpx*dpx + dpy*dpy;
-            double b = 2*(dcx*dpx + dcy*dpy);
-            double c = dcx*dcx + dcy*dcy - r*r;
-
-            // Solve for line parameter x.
-            double d = sqrt(b*b - 4*a*c);
-            double x1 = (-b + d)/(2*a);
-            double x2 = (-b - d)/(2*a);
-
-            // The solution we want will be 0<=x<=1
-            double sol = (x1 >= 0 && x1 <= 1) ? x1 : x2;
-            if (sol > 0)
+            if (line_sphere_intersection(p1, p2, p3, r, u))
             {
-                tp[4*i] += sol*dpx;
-                tp[4*i+1] += sol*dpy;
+                // The solution we want will be positive
+                double sol = u[0] >= 0 ? u[0] : u[1];
+
+                // The entire line is hidden if sol > 1
+                if (sol > 1)
+                    continue;
+
+                tp[4*i] += sol*(p2[0]-p1[0]);
+                tp[4*i+1] += sol*(p2[1]-p1[1]);
             }
         }
 
