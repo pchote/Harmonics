@@ -53,12 +53,13 @@ void set_color_scale(mode *modes, int num_modes, int ang_res, float *omin, float
 {
     double min = 1e9;
     double max = -1e9;
-    for (int t = 0; t < ang_res; t++)
-    {
-        double val = calculate_surface_value(modes, num_modes, t*M_PI/ang_res, 0, 0);
-        min = fmin(min, val);
-        max = fmax(max, val);
-    }
+    for (int j = 0; j < ang_res; j++)
+        for (int i = 0; i < ang_res; i++)
+        {
+            double val = calculate_surface_value(modes, num_modes, j*M_PI/ang_res, i*2*M_PI/ang_res, 0);
+            min = fmin(min, val);
+            max = fmax(max, val);
+        }
 
     // Compress color range slightly so we can use the bottom-most index for the background
     min *= 1.2f;
