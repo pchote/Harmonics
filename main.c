@@ -27,8 +27,10 @@ typedef struct
 float calculate_surface_value(mode *modes, int num_modes, double theta, double phi, double t)
 {
     float val = 0;
+    // Negative m changes the effective sign of t in the modulation term (cos is an even function)
+    // and so reverses the direction of wave propagation
     for (int i = 0; i < num_modes; i++)
-        val += modes[i].a*cos(modes[i].m*phi - modes[i].w*t)*gsl_sf_legendre_sphPlm(modes[i].l, modes[i].m, cos(theta));
+        val += modes[i].a*cos(modes[i].m*phi - modes[i].w*t)*gsl_sf_legendre_sphPlm(modes[i].l, abs(modes[i].m), cos(theta));
     return val;
 }
 
