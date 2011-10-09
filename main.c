@@ -234,6 +234,75 @@ void plot_projection_axes(double width, double scale, double length, double ry, 
     }
 }
 
+/*
+ * Calculate the intensity over the visible stellar disk
+ * and return the total integrated intensity
+ *
+ * modes is an array of num_modes pulsation modes
+ * t specifies the time of the calculation
+ * rx, ry specify x and z rotations for the orientation of the observer
+ * resolution specifies the number of pixels across the diameter of the disk
+ * pixel_data is a float[resolution^2] array (or NULL) for storing the individual disk pixel intensities
+ */
+float calculate_visible_disk(mode *modes, int num_modes, double t, double ry, double rz, int resolution, float *pixel_data)
+{
+    float total = 0;
+    // Project from x,y screen coords to theta,phi surface coords
+    for (int j = 0; j < resolution; j++)
+        for (int i = 0; i < resolution; i++)
+        {
+            // Set initial background pixel value
+            int ij = resolution*j + i;
+            if (pixel_data)
+                pixel_data[ij] = -1e9;
+
+            // Screen x,y maps to world y,z. world z is out of the screen
+            // scaled so that r = 1
+            double x = 1.5;
+            double y = (2*i - resolution)*1.0f/resolution;
+            double z = (2*j - resolution)*1.0f/resolution;
+
+            // Outside the sphere
+            if (y*y + z*z >= 1)
+                continue;
+
+            // Project a ray through the sphere to find the closest intersection
+            double p1[3] = {x, y, z};
+            double p2[3] = {-x, y, z};
+            double p3[3] = {0, 0, 0};
+
+            // Rotate coordinate system around ray to find the rotated world coords
+            // Rotate each point from view -> world coordinates
+            rotate_y(p1, -ry);
+            rotate_y(p2, -ry);
+            rotate_z(p1, -rz);
+            rotate_z(p2, -rz);
+
+            // Find intersection with sphere
+            double u[2] = {0, 0};
+
+            if (!line_sphere_intersection(p1, p2, p3, 1, u))
+                continue;
+
+            double sol = fmin(u[0], u[1]);
+            x = p1[0]+sol*(p2[0]-p1[0]);
+            y = p1[1]+sol*(p2[1]-p1[1]);
+            z = p1[2]+sol*(p2[2]-p1[2]);
+
+            // Calculate spherical angles
+            // Theta is measured clockwise from +z
+            double theta = acos(z);
+            double phi = atan2(x,y);
+
+            float intensity = calculate_surface_value(modes, num_modes, theta, phi, t);
+            total += intensity;
+
+            if (pixel_data)
+                pixel_data[ij] = intensity;
+        }
+    return total;
+}
+
 int plot_harmonic(int l, int m)
 {
     /*
@@ -257,10 +326,7 @@ int plot_harmonic(int l, int m)
 
     // Calculation resolution for each subplot
     int ang_res = 300;
-    int proj_res = 300;
-
-    // Sphere radius as a fraction of the plot half-width
-    double scale = 0.5;
+    int proj_res = 150;
 
     if (cpgopen("6/xs") <= 0)
     {
@@ -313,59 +379,17 @@ int plot_harmonic(int l, int m)
         /*
          * Plot the harmonic value on the surface of a sphere
          */
+        calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);
         cpgsvp(0.52, 0.9, 0.1, 0.9);
-        cpgwnad(0, proj_res, 0, proj_res);
 
-        // Project from x,y screen coords to theta,phi surface coords
-        for (int j = 0; j < proj_res; j++)
-            for (int i = 0; i < proj_res; i++)
-            {
-                int ij = proj_res*j + i;
-                proj_data[ij] = -1e9;
-
-                // Screen x,y maps to world y,z. world z is out of the screen.
-                // Scale so that r = 1
-                double x = 1.5;
-                double y = (2*i - proj_res)/(scale*proj_res);
-                double z = (2*j - proj_res)/(scale*proj_res);
-
-                // Outside the sphere
-                if (y*y + z*z >= 1)
-                    continue;
-
-                // Project a ray through the sphere to find the closest intersection
-                double p1[3] = {x, y, z};
-                double p2[3] = {-x, y, z};
-                double p3[3] = {0, 0, 0};
-
-                // Rotate coordinate system around ray to find the rotated world coords
-                // Rotate each point from view -> world coordinates
-                rotate_y(p1, -ry);
-                rotate_y(p2, -ry);
-                rotate_z(p1, -rz);
-                rotate_z(p2, -rz);
-
-                // Find intersection with sphere
-                double u[2] = {0, 0};
-
-                if (!line_sphere_intersection(p1, p2, p3, 1, u))
-                    continue;
-
-                double sol = fmin(u[0], u[1]);
-                x = p1[0]+sol*(p2[0]-p1[0]);
-                y = p1[1]+sol*(p2[1]-p1[1]);
-                z = p1[2]+sol*(p2[2]-p1[2]);
-
-                // Calculate spherical angles
-                // Theta is measured clockwise from +z
-                double theta = acos(z);
-                double phi = atan2(x,y);
-
-                proj_data[ij] = calculate_surface_value(modes, num_modes, theta, phi, t);
-            }
-
+        // Center the sphere within the viewport with a margin to draw the axes over
+        cpgwnad(-0.5f*proj_res, 1.5f*proj_res, -0.5f*proj_res, 1.5f*proj_res);
         cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
-        plot_projection_axes(proj_res, scale, 60, ry, rz);
+
+        // Restore the viewport for drawing the axes
+        cpgwnad(0, proj_res, 0, proj_res);
+        plot_projection_axes(proj_res, 0.5f, 60, ry, rz);
+
         //rz += 0.02;
         //ry += 0.02;
         t += 0.15;
