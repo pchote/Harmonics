@@ -11,7 +11,7 @@
 #include <cpgplot.h>
 #include <gsl/gsl_sf_legendre.h>
 
-#pragma mark Generic Helpers
+#pragma mark Calculation Functions
 
 typedef struct
 {
@@ -30,43 +30,6 @@ float calculate_surface_value(mode *modes, int num_modes, double theta, double p
     for (int i = 0; i < num_modes; i++)
         val += modes[i].a*cos(modes[i].m*phi - modes[i].w*t)*gsl_sf_legendre_sphPlm(modes[i].l, modes[i].m, cos(theta));
     return val;
-}
-
-/*
- * Set the color table for plotting
- * Based on the rainbow color table in the PGPLOT example pgdemo4.f
- */
-void set_color_table()
-{
-    float l[9] = {0.0, 0.005, 0.17, 0.33, 0.50, 0.67, 0.83, 1.0, 1.7};
-    float r[9] = {0.0, 0.0,  0.0,  0.0,  0.6,  1.0,  1.0, 1.0, 1.0};
-    float g[9] = {0.0, 0.0,  0.0,  1.0,  1.0,  1.0,  0.6, 0.0, 1.0};
-    float b[9] = {0.0, 0.3,  0.8,  1.0,  0.3,  0.0,  0.0, 0.0, 1.0};
-    cpgctab(l, r, g, b, 9, 1.0, 0.5);
-}
-
-/*
- * Determine min and max values for the color palette
- * to best use the available dynamic range
- */
-void set_color_scale(mode *modes, int num_modes, int ang_res, float *omin, float *omax)
-{
-    double min = 1e9;
-    double max = -1e9;
-    for (int j = 0; j < ang_res; j++)
-        for (int i = 0; i < ang_res; i++)
-        {
-            double val = calculate_surface_value(modes, num_modes, j*M_PI/ang_res, i*2*M_PI/ang_res, 0);
-            min = fmin(min, val);
-            max = fmax(max, val);
-        }
-
-    // Compress color range slightly so we can use the bottom-most index for the background
-    min *= 1.2f;
-    max *= 1.2f;
-
-    *omin = (float)min;
-    *omax = (float)max;
 }
 
 /*
@@ -140,7 +103,114 @@ int line_sphere_intersection(double *p1, double *p2, double *p3, double r, doubl
     return 1;
 }
 
+/*
+ * Calculate the intensity over the visible stellar disk
+ * and return the total integrated intensity
+ *
+ * modes is an array of num_modes pulsation modes
+ * t specifies the time of the calculation
+ * rx, ry specify x and z rotations for the orientation of the observer
+ * resolution specifies the number of pixels across the diameter of the disk
+ * pixel_data is a float[resolution^2] array (or NULL) for storing the individual disk pixel intensities
+ */
+float calculate_visible_disk(mode *modes, int num_modes, double t, double ry, double rz, int resolution, float *pixel_data)
+{
+    float total = 0;
+    // Project from x,y screen coords to theta,phi surface coords
+    for (int j = 0; j < resolution; j++)
+        for (int i = 0; i < resolution; i++)
+        {
+            // Set initial background pixel value
+            int ij = resolution*j + i;
+            if (pixel_data)
+                pixel_data[ij] = -1e9;
+
+            // Screen x,y maps to world y,z. world z is out of the screen
+            // scaled so that r = 1
+            double x = 1.5;
+            double y = (2*i - resolution)*1.0f/resolution;
+            double z = (2*j - resolution)*1.0f/resolution;
+
+            // Outside the sphere
+            if (y*y + z*z >= 1)
+                continue;
+
+            // Project a ray through the sphere to find the closest intersection
+            double p1[3] = {x, y, z};
+            double p2[3] = {-x, y, z};
+            double p3[3] = {0, 0, 0};
+
+            // Rotate coordinate system around ray to find the rotated world coords
+            // Rotate each point from view -> world coordinates
+            rotate_y(p1, -ry);
+            rotate_y(p2, -ry);
+            rotate_z(p1, -rz);
+            rotate_z(p2, -rz);
+
+            // Find intersection with sphere
+            double u[2] = {0, 0};
+
+            if (!line_sphere_intersection(p1, p2, p3, 1, u))
+                continue;
+
+            double sol = fmin(u[0], u[1]);
+            x = p1[0]+sol*(p2[0]-p1[0]);
+            y = p1[1]+sol*(p2[1]-p1[1]);
+            z = p1[2]+sol*(p2[2]-p1[2]);
+
+            // Calculate spherical angles
+            // Theta is measured clockwise from +z
+            double theta = acos(z);
+            double phi = atan2(x,y);
+
+            float intensity = calculate_surface_value(modes, num_modes, theta, phi, t);
+            total += intensity;
+
+            if (pixel_data)
+                pixel_data[ij] = intensity;
+        }
+    return total;
+}
+
 #pragma mark Drawing Functions
+
+
+/*
+ * Set the color table for plotting
+ * Based on the rainbow color table in the PGPLOT example pgdemo4.f
+ */
+void set_color_table()
+{
+    float l[9] = {0.0, 0.005, 0.17, 0.33, 0.50, 0.67, 0.83, 1.0, 1.7};
+    float r[9] = {0.0, 0.0,  0.0,  0.0,  0.6,  1.0,  1.0, 1.0, 1.0};
+    float g[9] = {0.0, 0.0,  0.0,  1.0,  1.0,  1.0,  0.6, 0.0, 1.0};
+    float b[9] = {0.0, 0.3,  0.8,  1.0,  0.3,  0.0,  0.0, 0.0, 1.0};
+    cpgctab(l, r, g, b, 9, 1.0, 0.5);
+}
+
+/*
+ * Determine min and max values for the color palette
+ * to best use the available dynamic range
+ */
+void set_color_scale(mode *modes, int num_modes, int ang_res, float *omin, float *omax)
+{
+    double min = 1e9;
+    double max = -1e9;
+    for (int j = 0; j < ang_res; j++)
+        for (int i = 0; i < ang_res; i++)
+        {
+            double val = calculate_surface_value(modes, num_modes, j*M_PI/ang_res, i*2*M_PI/ang_res, 0);
+            min = fmin(min, val);
+            max = fmax(max, val);
+        }
+
+    // Compress color range slightly so we can use the bottom-most index for the background
+    min *= 1.2f;
+    max *= 1.2f;
+
+    *omin = (float)min;
+    *omax = (float)max;
+}
 
 /*
  * Draw the axis lines on top of the projection plot
@@ -234,75 +304,7 @@ void plot_projection_axes(double width, double scale, double length, double ry, 
     }
 }
 
-/*
- * Calculate the intensity over the visible stellar disk
- * and return the total integrated intensity
- *
- * modes is an array of num_modes pulsation modes
- * t specifies the time of the calculation
- * rx, ry specify x and z rotations for the orientation of the observer
- * resolution specifies the number of pixels across the diameter of the disk
- * pixel_data is a float[resolution^2] array (or NULL) for storing the individual disk pixel intensities
- */
-float calculate_visible_disk(mode *modes, int num_modes, double t, double ry, double rz, int resolution, float *pixel_data)
-{
-    float total = 0;
-    // Project from x,y screen coords to theta,phi surface coords
-    for (int j = 0; j < resolution; j++)
-        for (int i = 0; i < resolution; i++)
-        {
-            // Set initial background pixel value
-            int ij = resolution*j + i;
-            if (pixel_data)
-                pixel_data[ij] = -1e9;
-
-            // Screen x,y maps to world y,z. world z is out of the screen
-            // scaled so that r = 1
-            double x = 1.5;
-            double y = (2*i - resolution)*1.0f/resolution;
-            double z = (2*j - resolution)*1.0f/resolution;
-
-            // Outside the sphere
-            if (y*y + z*z >= 1)
-                continue;
-
-            // Project a ray through the sphere to find the closest intersection
-            double p1[3] = {x, y, z};
-            double p2[3] = {-x, y, z};
-            double p3[3] = {0, 0, 0};
-
-            // Rotate coordinate system around ray to find the rotated world coords
-            // Rotate each point from view -> world coordinates
-            rotate_y(p1, -ry);
-            rotate_y(p2, -ry);
-            rotate_z(p1, -rz);
-            rotate_z(p2, -rz);
-
-            // Find intersection with sphere
-            double u[2] = {0, 0};
-
-            if (!line_sphere_intersection(p1, p2, p3, 1, u))
-                continue;
-
-            double sol = fmin(u[0], u[1]);
-            x = p1[0]+sol*(p2[0]-p1[0]);
-            y = p1[1]+sol*(p2[1]-p1[1]);
-            z = p1[2]+sol*(p2[2]-p1[2]);
-
-            // Calculate spherical angles
-            // Theta is measured clockwise from +z
-            double theta = acos(z);
-            double phi = atan2(x,y);
-
-            float intensity = calculate_surface_value(modes, num_modes, theta, phi, t);
-            total += intensity;
-
-            if (pixel_data)
-                pixel_data[ij] = intensity;
-        }
-    return total;
-}
-
+#pragma mark Calculation Types
 int plot_harmonic(int l, int m)
 {
     /*
