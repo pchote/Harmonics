@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <cpgplot.h>
-#include <gsl_sf_legendre.h>
+#include <gsl/gsl_sf_legendre.h>
 
 #pragma mark Generic Helpers
 

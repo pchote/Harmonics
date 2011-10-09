@@ -5,7 +5,7 @@
 
 CC = gcc
 LINKER = gfortran
-CFLAGS = -g -c -Wall -pedantic -Dlinux --std=c99 -D_XOPEN_SOURCE -D_BSD_SOURCE -I/usr/local/Cellar/gsl/1.15/include/gsl
+CFLAGS = -g -c -Wall -pedantic -Dlinux --std=c99 -D_XOPEN_SOURCE -D_BSD_SOURCE
 LFLAGS = -lcfitsio -lxpa -lgsl
 
 CFLAGS += -I/sw/lib/pgplot
