@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <cpgplot.h>
 #include <gsl/gsl_sf_legendre.h>
@@ -405,13 +406,45 @@ int plot_harmonic(int l, int m)
     return 0;
 }
 
+int calculate_lightcurve(double tmax, int num_points)
+{
+    // Pulsation modes
+    int num_modes = 1;
+    mode modes[] =
+    {
+        {1, 0, 1.0f, 1.0f},
+        {1, 1, 0.5f, 0.20f},
+        {2, 0, 0.25f, 1.8f},
+        {2, 1, 0.05f, 2.0f}
+    };
+
+    // Coordinate rotations
+    double rz = -M_PI/4;
+    double ry = 30*M_PI/180;
+
+    int resolution = 200;
+
+    double t = 0;
+    double dt = tmax/num_points;
+    while (t <= tmax)
+    {
+        float intensity = calculate_visible_disk(modes, num_modes, t, ry, rz, resolution, NULL);
+        printf("%f %f\n", t, intensity);
+        t += dt;
+    }
+
+    return 0;
+}
+
 int main( int argc, char *argv[] )
 {
-    if (argc == 3)
-        plot_harmonic(atoi(argv[1]), atoi(argv[2]));
+    if (argc == 4 && !strncmp(argv[1], "visualise", 9))
+        plot_harmonic(atoi(argv[2]), atoi(argv[3]));
+    if (argc == 4 && !strncmp(argv[1], "lightcurve", 10))
+        calculate_lightcurve(atof(argv[2]), atoi(argv[3]));
     else
     {
-        fprintf(stderr, "Invalid args");
+        fprintf(stderr, "Invalid args\n");
         return 1;
     }
     return 0;
