@@ -184,10 +184,11 @@ float calculate_visible_disk(mode *modes, int num_modes, double t, double ry, do
  */
 void set_color_table()
 {
+//    float l[9] = {0.0, 0.005, 0.17, 0.33, 0.50, 0.67, 0.83, 1.0, 1.7};
     float l[9] = {0.0, 0.005, 0.17, 0.33, 0.50, 0.67, 0.83, 1.0, 1.7};
-    float r[9] = {0.0, 0.0,  0.0,  0.0,  0.6,  1.0,  1.0, 1.0, 1.0};
-    float g[9] = {0.0, 0.0,  0.0,  1.0,  1.0,  1.0,  0.6, 0.0, 1.0};
-    float b[9] = {0.0, 0.3,  0.8,  1.0,  0.3,  0.0,  0.0, 0.0, 1.0};
+    float r[9] = {1.0, 0.0,  0.0,  0.0,  0.6,  1.0,  1.0, 1.0, 1.0};
+    float g[9] = {1.0, 0.0,  0.0,  1.0,  1.0,  1.0,  0.6, 0.0, 1.0};
+    float b[9] = {1.0, 0.3,  0.8,  1.0,  0.3,  0.0,  0.0, 0.0, 1.0};
     cpgctab(l, r, g, b, 9, 1.0, 0.5);
 }
 
@@ -208,9 +209,8 @@ void set_color_scale(mode *modes, int num_modes, int ang_res, float *omin, float
         }
 
     // Compress color range slightly so we can use the bottom-most index for the background
-    min *= 1.2f;
-    max *= 1.2f;
-
+    min *= 2;
+    
     *omin = (float)min;
     *omax = (float)max;
 }
@@ -409,13 +409,11 @@ int plot_harmonic(int l, int m)
 int calculate_lightcurve(double tmax, int num_points)
 {
     // Pulsation modes
-    int num_modes = 1;
+    int num_modes = 2;
     mode modes[] =
     {
-        {1, 0, 1.0f, 1.0f},
-        {1, 1, 0.5f, 0.20f},
-        {2, 0, 0.25f, 1.8f},
-        {2, 1, 0.05f, 2.0f}
+        {1, 0, 1.0f, 2*M_PI*2236.21e-6},
+        {1, 1, 0.5f, 2*M_PI*2361.44e-6},
     };
 
     // Coordinate rotations
@@ -436,8 +434,170 @@ int calculate_lightcurve(double tmax, int num_points)
     return 0;
 }
 
+// Calculate the amplitude spectrum of the signal defined by numData points in (time, data)
+// in the frequency range (fmin, fmax)
+// numOut results are stored in (outFreq, outPower)
+void calculate_amplitude_spectrum(float *t, float *data, int numData, float fmin, float fmax, float *outFreq, float *outPower, int numOut)
+{
+    double df = (fmax-fmin)/numOut;
+    for (int j = 0; j < numOut; j++)
+    {
+        double real = 0;
+        double imag = 0;
+        outFreq[j] = fmin + j*df;
+        
+        for (int i = 0; i < numData; i++)
+        {
+            double phase = -outFreq[j]*2*M_PI*(t[i]-t[0]);
+            real += data[i]*cos(phase)/numData;
+            imag += data[i]*sin(phase)/numData;
+        }
+        
+        outPower[j] = 2*sqrt(real*real + imag*imag);
+    }
+}
+
+
+int demo()
+{
+    /*
+     * Simulation setup
+     */
+    
+    // Pulsation modes
+    int num_modes = 6;
+    mode modes[] =
+    {
+        {1, 0, 1.0f, 2*M_PI*1000e-6},
+        {1, 1, 0.5f, 2*M_PI*1000e-6},
+        {1, -1, 0.5f, 2*M_PI*1000e-6},
+        {2, 0, 0.25f, 2*M_PI*1200e-6f},
+        {2, 1, 0.125f, 2*M_PI*1200e-6f},
+        {2, -1, 0.125f, 2*M_PI*1200e-6f},
+    };
+
+    /*
+     * Plot setup
+     */
+    double dt = 40;
+    int num_points = 250;
+    float *time = (float *)malloc(num_points*sizeof(float));
+    float *intensity = (float *)malloc(num_points*sizeof(float));
+
+    // Calculation resolution for each subplot
+    int ang_res = 80;
+    int proj_res = 100;
+    
+    float min, max;
+    set_color_scale(modes, num_modes, ang_res, &min, &max);
+        
+    float *proj_data = (float *)malloc(proj_res*proj_res*sizeof(float));
+    float *angle_data = (float *)malloc(ang_res*ang_res*sizeof(float));
+    float tr[] = {-0.5, 1, 0, -0.5, 0, 1};
+    
+    
+    // Coordinate rotations
+    double rz = -M_PI/4;
+    double ry = 30*M_PI/180;
+    
+    // Current simulation time
+    double t = 0;
+    for (int i = 0; i < num_points; i++)
+    {
+        char buf[128];
+        sprintf(buf, "anim/%d.ps/cps", i);
+        printf("%s\n", buf);
+
+        if (cpgopen(buf) <= 0)
+        {
+            fprintf(stderr, "Unable to open PGPLOT window");
+            return 1;
+        }
+        
+        cpgpap(9.41, 0.6);
+        cpgask(0);
+        cpgslw(3);
+        cpgscf(2);
+        cpgsfs(2);
+        cpgsci(1);
+        set_color_table();
+        
+        /*
+         * Plot the harmonic value as a function of theta,phi
+         */
+        cpgsvp(0.1, 0.48, 0.58, 0.9);
+        cpgwnad(0, ang_res, 0, ang_res/2);
+
+        cpgsch(1.5);
+        cpgmtxt("t", 1, 0.5, 0.5, "Surface Luminosity");
+        cpgsch(1.2);
+        cpgmtxt("l", 3.5, 0.5, 0.5, "Latitude");
+        cpgmtxt("b", 2.75, 0.5, 0.5, "Longitude");
+
+        cpgswin(0, ang_res, ang_res, 0);
+        
+        for (int j = 0; j < ang_res; j++)
+            for (int i = 0; i < ang_res; i++)
+                angle_data[ang_res*j + i] = calculate_surface_value(modes, num_modes, j*M_PI/ang_res, i*2*M_PI/ang_res, t);
+        
+        cpgimag(angle_data, ang_res, ang_res, 1, ang_res, 1, ang_res, min, max, tr);
+        cpgswin(-180, 180, -90, 90);
+        cpgbox("bcstn", 90, 3, "bcstnv", 30, 1);
+
+        /*
+         * Plot the harmonic value on the surface of a sphere
+         */
+        cpgsvp(0.57, 0.95, 0.52, 0.9);
+        cpgsci(1);
+        cpgsch(1.5);
+        cpgmtxt("t", 1, 0.5, 0.5, "  Visible Surface");
+    
+        
+        time[i] = t;
+        intensity[i] = calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);
+        
+        cpgsvp(0.57, 0.95, 0.42, 0.98);
+
+        // Center the sphere within the viewport with a margin to draw the axes over
+        cpgwnad(-0.5f*proj_res, 1.5f*proj_res, -0.5f*proj_res, 1.5f*proj_res);
+        cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
+        
+        // Restore the viewport for drawing the axes
+        cpgwnad(0, proj_res, 0, proj_res);
+        plot_projection_axes(proj_res, 0.5f, 30, ry, rz);
+        
+        cpgsch(1.2);
+        cpgsci(1);
+        // Time Series Plot
+        float intensity_limit = 1500;
+        cpgsvp(0.1, 0.9, 0.1, 0.37);
+        cpgswin(0, dt*num_points, -intensity_limit, intensity_limit);
+        cpgbox("bcstn1", dt*num_points/10, 0, "bc", 1000, 2);
+        cpgsch(1.5);
+        cpgmtxt("t", 0.7, 0.5, 0.5, "Visible Intensity");
+        cpgsch(1.2);
+        cpgmtxt("b", 2.75, 0.5, 0.5, "Time (s)");
+        cpgmtxt("l", 1, 0.5, 0.5, "Intensity");
+
+        cpgline(i, time, intensity);
+        
+        t += dt;
+        cpgend();
+    }
+    
+    free(angle_data);
+    free(proj_data);
+    
+    free(time);
+    free(intensity);
+
+    return 0;
+}
+
 int main( int argc, char *argv[] )
 {
+    if (argc == 2 && !strncmp(argv[1], "demo", 4))
+        demo();
     if (argc == 4 && !strncmp(argv[1], "visualise", 9))
         plot_harmonic(atoi(argv[2]), atoi(argv[3]));
     if (argc == 4 && !strncmp(argv[1], "lightcurve", 10))
