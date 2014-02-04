@@ -465,22 +465,17 @@ int demo()
      */
     
     // Pulsation modes
-    int num_modes = 6;
+    int num_modes = 1;
     mode modes[] =
     {
-        {1, 0, 1.0f, 2*M_PI*1000e-6},
-        {1, 1, 0.5f, 2*M_PI*1000e-6},
-        {1, -1, 0.5f, 2*M_PI*1000e-6},
-        {2, 0, 0.25f, 2*M_PI*1200e-6f},
-        {2, 1, 0.125f, 2*M_PI*1200e-6f},
-        {2, -1, 0.125f, 2*M_PI*1200e-6f},
+        {2,-1, 1.0f, 2*M_PI*1000e-6},
     };
 
     /*
      * Plot setup
      */
-    double dt = 40;
-    int num_points = 250;
+    double dt = 10;
+    int num_points = 200;
     float *time = (float *)malloc(num_points*sizeof(float));
     float *intensity = (float *)malloc(num_points*sizeof(float));
 
@@ -502,88 +497,104 @@ int demo()
     
     // Current simulation time
     double t = 0;
+
+	if (cpgopen("/Users/paul/phd/thesis/figures/introduction/harmonics.ps/vcps") <= 0)
+	{
+        fprintf(stderr, "Unable to open PGPLOT window");
+        return 1;
+    }
+    
+    cpgpap(7, 0.4);
+    cpgask(0);
+    cpgslw(1);
+    cpgscf(2);
+    cpgsfs(2);
+    cpgsci(1);
+    cpgsch(1.4);
+	
+    set_color_table();
+	
     for (int i = 0; i < num_points; i++)
+	{
+        time[i] = t = i * dt + 100;
+        intensity[i] = calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);		
+	}
+
     {
-        char buf[128];
-        sprintf(buf, "anim/%d.ps/cps", i);
-        printf("%s\n", buf);
 
-        if (cpgopen(buf) <= 0)
-        {
-            fprintf(stderr, "Unable to open PGPLOT window");
-            return 1;
-        }
+        cpgbbuf();
         
-        cpgpap(9.41, 0.6);
-        cpgask(0);
-        cpgslw(3);
-        cpgscf(2);
-        cpgsfs(2);
-        cpgsci(1);
-        set_color_table();
-        
-        /*
-         * Plot the harmonic value as a function of theta,phi
-         */
-        cpgsvp(0.1, 0.48, 0.58, 0.9);
-        cpgwnad(0, ang_res, 0, ang_res/2);
-
-        cpgsch(1.5);
-        cpgmtxt("t", 1, 0.5, 0.5, "Surface Luminosity");
-        cpgsch(1.2);
-        cpgmtxt("l", 3.5, 0.5, 0.5, "Latitude");
-        cpgmtxt("b", 2.75, 0.5, 0.5, "Longitude");
-
-        cpgswin(0, ang_res, ang_res, 0);
-        
-        for (int j = 0; j < ang_res; j++)
-            for (int i = 0; i < ang_res; i++)
-                angle_data[ang_res*j + i] = calculate_surface_value(modes, num_modes, j*M_PI/ang_res, i*2*M_PI/ang_res, t);
-        
-        cpgimag(angle_data, ang_res, ang_res, 1, ang_res, 1, ang_res, min, max, tr);
-        cpgswin(-180, 180, -90, 90);
-        cpgbox("bcstn", 90, 3, "bcstnv", 30, 1);
 
         /*
          * Plot the harmonic value on the surface of a sphere
          */
-        cpgsvp(0.57, 0.95, 0.52, 0.9);
-        cpgsci(1);
-        cpgsch(1.5);
-        cpgmtxt("t", 1, 0.5, 0.5, "  Visible Surface");
-    
-        
-        time[i] = t;
-        intensity[i] = calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);
-        
-        cpgsvp(0.57, 0.95, 0.42, 0.98);
+		{
+	        t = 350;
 
-        // Center the sphere within the viewport with a margin to draw the axes over
-        cpgwnad(-0.5f*proj_res, 1.5f*proj_res, -0.5f*proj_res, 1.5f*proj_res);
-        cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
+	        calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);
         
-        // Restore the viewport for drawing the axes
-        cpgwnad(0, proj_res, 0, proj_res);
-        plot_projection_axes(proj_res, 0.5f, 30, ry, rz);
+	        cpgsvp(0.05, 0.347, 0.42, 0.98);
+
+	        // Center the sphere within the viewport with a margin to draw the axes over
+	        cpgwnad(-0.5f*proj_res, 1.5f*proj_res, -0.5f*proj_res, 1.5f*proj_res);
+	        cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
         
-        cpgsch(1.2);
+	        // Restore the viewport for drawing the axes
+	        cpgwnad(0, proj_res, 0, proj_res);
+	        plot_projection_axes(proj_res, 0.5f, 20, ry, rz);
+		}
+		
+		{
+			t = 1100;
+	        calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);
+        
+	        cpgsvp(0.31, 0.69, 0.42, 0.98);
+
+	        // Center the sphere within the viewport with a margin to draw the axes over
+	        cpgwnad(-0.5f*proj_res, 1.5f*proj_res, -0.5f*proj_res, 1.5f*proj_res);
+	        cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
+        
+	        // Restore the viewport for drawing the axes
+	        cpgwnad(0, proj_res, 0, proj_res);
+	        plot_projection_axes(proj_res, 0.5f, 20, ry, rz);
+		}
+		
+		{
+			t = 1900;
+	        calculate_visible_disk(modes, num_modes, t, ry, rz, proj_res, proj_data);
+        
+	        cpgsvp(0.655, 0.99, 0.42, 0.98);
+
+	        // Center the sphere within the viewport with a margin to draw the axes over
+	        cpgwnad(-0.5f*proj_res, 1.5f*proj_res, -0.5f*proj_res, 1.5f*proj_res);
+	        cpgimag(proj_data, proj_res, proj_res, 1, proj_res, 1, proj_res, min, max, tr);
+        
+	        // Restore the viewport for drawing the axes
+	        cpgwnad(0, proj_res, 0, proj_res);
+	        plot_projection_axes(proj_res, 0.5f, 20, ry, rz);
+		}
+		
+
         cpgsci(1);
         // Time Series Plot
         float intensity_limit = 1500;
-        cpgsvp(0.1, 0.9, 0.1, 0.37);
-        cpgswin(0, dt*num_points, -intensity_limit, intensity_limit);
-        cpgbox("bcstn1", dt*num_points/10, 0, "bc", 1000, 2);
-        cpgsch(1.5);
-        cpgmtxt("t", 0.7, 0.5, 0.5, "Visible Intensity");
-        cpgsch(1.2);
-        cpgmtxt("b", 2.75, 0.5, 0.5, "Time (s)");
+        cpgsvp(0.1, 0.9, 0.15, 0.4);
+        cpgswin(time[0], time[num_points - 1], -intensity_limit, intensity_limit);
         cpgmtxt("l", 1, 0.5, 0.5, "Intensity");
-
-        cpgline(i, time, intensity);
+		
+		cpgarro(350, -1000, 350, 500);
+		cpgarro(1100, 1000, 1100, 100);
+		cpgarro(1900, 1000, 1900, -500);
+		
+        cpgline(num_points, time, intensity);
+        cpgswin(0, 2, -intensity_limit, intensity_limit);
+        cpgbox("bcstn1", 0.5, 0, "bc", 1000, 2);
+        cpgmtxt("b", 2.75, 0.5, 0.5, "Phase (cycles)");
         
-        t += dt;
-        cpgend();
+        cpgebuf();
+		
     }
+    cpgend();
     
     free(angle_data);
     free(proj_data);
@@ -598,9 +609,9 @@ int main( int argc, char *argv[] )
 {
     if (argc == 2 && !strncmp(argv[1], "demo", 4))
         demo();
-    if (argc == 4 && !strncmp(argv[1], "visualise", 9))
+    else if (argc == 4 && !strncmp(argv[1], "visualise", 9))
         plot_harmonic(atoi(argv[2]), atoi(argv[3]));
-    if (argc == 4 && !strncmp(argv[1], "lightcurve", 10))
+    else if (argc == 4 && !strncmp(argv[1], "lightcurve", 10))
         calculate_lightcurve(atof(argv[2]), atoi(argv[3]));
     else
     {

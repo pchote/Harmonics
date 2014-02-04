@@ -8,8 +8,7 @@ LINKER = gfortran
 CFLAGS = -g -c -Wall -pedantic -Dlinux --std=c99 -D_XOPEN_SOURCE -D_BSD_SOURCE
 LFLAGS = -lcfitsio -lxpa -lgsl
 
-CFLAGS += -I/sw/lib/pgplot
-LFLAGS += -L/usr/X11R6/lib -lX11 -L/sw/lib -laquaterm -Wl,-framework -Wl,Foundation -L/sw/lib/pgplot -lcpgplot -lpgplot -lpng
+LFLAGS += -L/usr/local/lib -L/usr/X11R6/lib -lX11 -lcpgplot -lpgplot -lpng
 
 
 SRC = main.c
